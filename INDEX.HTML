@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Crime Records</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        .container {
+            width: 50%;
+            margin: auto;
+        }
+        form input {
+            margin: 5px;
+            padding: 8px;
+        }
+        button {
+            margin: 5px;
+            padding: 8px;
+            cursor: pointer;
+            border: none;
+            color: white;
+        }
+        .add-btn {
+            background-color: green;
+        }
+        .edit-btn {
+            background-color: blue;
+        }
+        .delete-btn {
+            background-color: red;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Crime Records</h1>
+
+        <form id="crimeForm">
+            <input type="hidden" id="crimeId">
+            <input type="text" id="crimeType" placeholder="Crime Type" required>
+            <input type="text" id="crimeLocation" placeholder="Location" required>
+            <button type="submit" class="add-btn">Add Crime</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Crime Type</th>
+                    <th>Location</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="crimeTableBody">
+                <!-- Data will be displayed here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:5000/crimes"; // Change to your actual API URL
+
+        // Fetch and display crime records
+        async function fetchCrimes() {
+            try {
+                const response = await fetch(API_URL);
+                const crimes = await response.json();
+                const crimess  = await crimes.reverse();
+                //console.log(crimess);
+                
+                const tableBody = document.getElementById("crimeTableBody");
+                tableBody.innerHTML = "";
+
+                crimess.forEach(crime => {
+                    const row = `
+                        <tr>
+                            <td>${crime.id}</td>
+                            <td>${crime.crime_type}</td>
+                            <td>${crime.location}</td>
+                            <td>
+                                <button class="edit-btn" onclick="editCrime(${crime.id}, '${crime.crime_type}', '${crime.location}')">Edit</button>
+                                <button class="delete-btn" onclick="deleteCrime(${crime.id})">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                    tableBody.innerHTML += row;
+                });
+            } catch (error) {
+                console.error("Error fetching crimes:", error);
+            }
+        }
+
+        // Add or update crime
+        document.getElementById("crimeForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            
+            const crimeId = document.getElementById("crimeId").value;
+            const crimeType = document.getElementById("crimeType").value;
+            const crimeLocation = document.getElementById("crimeLocation").value;
+
+            const crimeData = { crime_type: crimeType, location: crimeLocation };
+            const method = crimeId ? "PUT" : "POST";
+            const url = crimeId ? `${API_URL}/${crimeId}` : API_URL;
+
+            try {
+                await fetch(url, {
+                    method: method,
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(crimeData),
+                });
+
+                fetchCrimes();
+                document.getElementById("crimeForm").reset();
+                document.getElementById("crimeId").value = "";
+            } catch (error) {
+                console.error("Error adding/updating crime:", error);
+            }
+        });
+
+        // Edit crime (prefill form)
+        function editCrime(id, type, location) {
+            document.getElementById("crimeId").value = id;
+            document.getElementById("crimeType").value = type;
+            document.getElementById("crimeLocation").value = location;
+        }
+
+        // Delete crime
+        async function deleteCrime(id) {
+            if (!confirm("Are you sure you want to delete this record?")) return;
+
+            try {
+                await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+                fetchCrimes();
+            } catch (error) {
+                console.error("Error deleting crime:", error);
+            }
+        }
+
+        // Load crimes on page load
+        fetchCrimes();
+    </script>
+
+</body>
+</html>
