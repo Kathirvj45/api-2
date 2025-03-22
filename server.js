@@ -7,8 +7,6 @@ const app = express();
 app.use(cors());
 app.use(express.json()); // Allow JSON requests
 
-const fetch = require("node-fetch");
-
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
 
 // PostgreSQL connection (update with your Neon.tech credentials)
@@ -16,6 +14,24 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL, // Store credentials in .env file
     ssl: { rejectUnauthorized: false }, // Required for Neon.tech
 });
+
+// 📌 Function to fetch coordinates
+async function fetchCoordinates(location) {
+    try {
+        const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`);
+        const data = await response.json();
+
+        if (data.results.length > 0) {
+            return {
+                latitude: data.results[0].geometry.lat,
+                longitude: data.results[0].geometry.lng
+            };
+        }
+    } catch (error) {
+        console.error("Error fetching coordinates:", error);
+    }
+    return { latitude: null, longitude: null };
+}
 
 // 📌 GET all crime records
 app.get("/crimes", async (req, res) => {
@@ -33,15 +49,9 @@ app.post("/crimes", async (req, res) => {
     try {
         let { crime_type, location, latitude, longitude } = req.body;
 
-        // If coordinates are not provided, fetch them
+        // If coordinates are missing, fetch them
         if (!latitude || !longitude) {
-            const geoResponse = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`);
-            const geoData = await geoResponse.json();
-
-            if (geoData.results.length > 0) {
-                latitude = geoData.results[0].geometry.lat;
-                longitude = geoData.results[0].geometry.lng;
-            }
+            ({ latitude, longitude } = await fetchCoordinates(location));
         }
 
         const result = await pool.query(
@@ -56,12 +66,12 @@ app.post("/crimes", async (req, res) => {
     }
 });
 
-
 // 📌 PUT (Update) a crime record
 app.put("/crimes/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const { crime_type, location, latitude, longitude } = req.body;
+
         await pool.query(
             "UPDATE crimes SET crime_type = $1, location = $2, latitude = $3, longitude = $4 WHERE id = $5",
             [crime_type, location, latitude, longitude, id]
@@ -72,7 +82,6 @@ app.put("/crimes/:id", async (req, res) => {
         res.status(500).send("Error updating crime");
     }
 });
-
 
 // 📌 DELETE a crime record
 app.delete("/crimes/:id", async (req, res) => {
@@ -89,6 +98,5 @@ app.delete("/crimes/:id", async (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${port}`);
-  });
-
+    console.log(`Server is running on port ${PORT}`);
+});
