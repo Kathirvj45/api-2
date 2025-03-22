@@ -1,5 +1,4 @@
 const express = require("express");
-const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
 require("dotenv").config();
@@ -9,14 +8,6 @@ app.use(cors());
 app.use(express.json()); // Allow JSON requests
 
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
-
-// Serve static files from the current directory
-app.use(express.static(path.join(__dirname)));
-
-// Redirect `/form` to `index.html`
-app.get("/form", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
-});
 
 // PostgreSQL connection (update with your Neon.tech credentials)
 const pool = new Pool({
@@ -53,6 +44,7 @@ app.get("/crimes", async (req, res) => {
     }
 });
 
+
 // 📌 POST a new crime record
 app.post("/crimes", async (req, res) => {
     try {
@@ -63,9 +55,13 @@ app.post("/crimes", async (req, res) => {
             ({ latitude, longitude } = await fetchCoordinates(location));
         }
 
+        // Fetch the total count of existing records
+        const countResult = await pool.query("SELECT COUNT(*) FROM crimes");
+        const newId = parseInt(countResult.rows[0].count) + 1; // Get the next ID
+
         const result = await pool.query(
-            "INSERT INTO crimes (crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4) RETURNING *",
-            [crime_type, location, latitude, longitude]
+            "INSERT INTO crimes (id, crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+            [newId, crime_type, location, latitude, longitude]
         );
 
         res.json(result.rows[0]);
@@ -74,6 +70,7 @@ app.post("/crimes", async (req, res) => {
         res.status(500).send("Error adding crime");
     }
 });
+
 
 // 📌 PUT (Update) a crime record
 app.put("/crimes/:id", async (req, res) => {
