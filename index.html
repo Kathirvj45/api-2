@@ -193,33 +193,43 @@
             }
         });
 
-        async function fetchCrimes() {
-            try {
-                const response = await fetch(API_URL);
-                const crimes = await response.json();
-                const tableBody = document.getElementById("crimeTableBody");
-                tableBody.innerHTML = "";
+async function fetchCrimes() {
+    const tableBody = document.getElementById("crimeTableBody");
+    tableBody.innerHTML = "<tr><td colspan='6'>⏳ Loading...</td></tr>"; // Show loading text
 
-                crimes.reverse().forEach(crime => {
-                    const row = `
-                        <tr>
-                            <td>${crime.id}</td>
-                            <td>${crime.crime_type}</td>
-                            <td>${crime.location}</td>
-                            <td>${crime.latitude ? crime.latitude.toFixed(5) : 'N/A'}</td>
-                            <td>${crime.longitude ? crime.longitude.toFixed(5) : 'N/A'}</td>
-                            <td>
-                                <button class="edit-btn" onclick="editCrime(${crime.id}, '${crime.crime_type}', '${crime.location}', ${crime.latitude}, ${crime.longitude})">Edit</button>
-                                <button class="delete-btn" onclick="deleteCrime(${crime.id})">Delete</button>
-                            </td>
-                        </tr>
-                    `;
-                    tableBody.innerHTML += row;
-                });
-            } catch (error) {
-                console.error("Error fetching crimes:", error);
-            }
+    try {
+        const response = await fetch(API_URL);
+        const crimes = await response.json();
+
+        tableBody.innerHTML = ""; // Clear previous content
+
+        if (crimes.length === 0) {
+            tableBody.innerHTML = "<tr><td colspan='6'>⚠️ No crime records found.</td></tr>"; // No data message
+            return;
         }
+
+        crimes.reverse().forEach(crime => {
+            const row = `
+                <tr>
+                    <td>${crime.id}</td>
+                    <td>${crime.crime_type}</td>
+                    <td>${crime.location}</td>
+                    <td>${crime.latitude ? crime.latitude.toFixed(5) : 'N/A'}</td>
+                    <td>${crime.longitude ? crime.longitude.toFixed(5) : 'N/A'}</td>
+                    <td>
+                        <button class="edit-btn" onclick="editCrime(${crime.id}, '${crime.crime_type}', '${crime.location}', ${crime.latitude}, ${crime.longitude})">Edit</button>
+                        <button class="delete-btn" onclick="deleteCrime(${crime.id})">Delete</button>
+                    </td>
+                </tr>
+            `;
+            tableBody.innerHTML += row;
+        });
+    } catch (error) {
+        console.error("Error fetching crimes:", error);
+        tableBody.innerHTML = "<tr><td colspan='6'>❌ Error fetching data. Try again later.</td></tr>";
+    }
+}
+
 
         function editCrime(id, type, location, lat, lng) {
             document.getElementById("crimeId").value = id;
