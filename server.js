@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
 require("dotenv").config();
@@ -8,6 +9,14 @@ app.use(cors());
 app.use(express.json()); // Allow JSON requests
 
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
+
+// Serve static files from the current directory
+app.use(express.static(path.join(__dirname)));
+
+// Redirect `/form` to `index.html`
+app.get("/form", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
 
 // PostgreSQL connection (update with your Neon.tech credentials)
 const pool = new Pool({
