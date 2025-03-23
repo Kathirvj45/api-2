@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
 require("dotenv").config();
@@ -9,6 +10,13 @@ app.use(express.json()); // Allow JSON requests
 
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
 
+// Serve static files from the current directory
+app.use(express.static(path.join(__dirname)));
+
+// Redirect `/form` to `index.html`
+app.get("/form", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
 // PostgreSQL connection (update with your Neon.tech credentials)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL, // Store credentials in .env file
@@ -115,7 +123,6 @@ app.delete("/crimes/:id", async (req, res) => {
         res.status(500).send("Error deleting crime");
     }
 });
-
 
 // Start the server
 const PORT = process.env.PORT || 3000;
