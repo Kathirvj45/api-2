@@ -1,5 +1,4 @@
 const express = require("express");
-const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
 require("dotenv").config();
@@ -10,13 +9,6 @@ app.use(express.json()); // Allow JSON requests
 
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
 
-// Serve static files from the current directory
-app.use(express.static(path.join(__dirname)));
-
-// Redirect `/form` to `index.html`
-app.get("/form", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
-});
 // PostgreSQL connection (update with your Neon.tech credentials)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL, // Store credentials in .env file
@@ -98,16 +90,32 @@ app.put("/crimes/:id", async (req, res) => {
 });
 
 // 📌 DELETE a crime record
+// 📌 DELETE a crime record and reorder IDs
 app.delete("/crimes/:id", async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Delete the crime record
         await pool.query("DELETE FROM crimes WHERE id = $1", [id]);
-        res.send("Crime deleted successfully");
+
+        // Reorder IDs to maintain sequential numbering
+        await pool.query(`
+            WITH reordered AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS new_id FROM crimes
+            )
+            UPDATE crimes c
+            SET id = r.new_id
+            FROM reordered r
+            WHERE c.id = r.id
+        `);
+
+        res.send("Crime deleted and IDs reordered successfully");
     } catch (error) {
         console.error(error);
         res.status(500).send("Error deleting crime");
     }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
