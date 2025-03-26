@@ -2,45 +2,69 @@ const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
+const https = require("https"); // Native module for older Node.js versions
 require("dotenv").config();
-const fetch = require("node-fetch"); // Ensure node-fetch is installed
 
 const app = express();
-app.use(cors({ origin: "*" })); // Allow all origins temporarily
-app.use(express.json()); // Allow JSON requests
+app.use(cors({ origin: "*" }));
+app.use(express.json());
 
-const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac"; // Store in .env file
+const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
 
-// Serve static files from the current directory
 app.use(express.static(path.join(__dirname)));
 
-// Redirect `/form` to `index.html`
 app.get("/form", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
 // PostgreSQL connection (Neon.tech)
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // Ensure it's set in Render
-    ssl: { rejectUnauthorized: false }, // Required for Neon.tech
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
 });
 
 // 📌 Function to fetch coordinates
 async function fetchCoordinates(location) {
+    const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`;
+
     try {
         console.log(`Fetching coordinates for: ${location}`);
-        const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`);
-        const data = await response.json();
-        console.log("Geocode API Response:", data);
 
-        if (data.results.length > 0) {
-            return {
-                latitude: data.results[0].geometry.lat,
-                longitude: data.results[0].geometry.lng
-            };
+        // Check if fetch is available (Node.js 18+)
+        if (globalThis.fetch) {
+            const response = await fetch(url);
+            const data = await response.json();
+            return parseCoordinates(data);
         }
+
+        // Fallback for older Node.js versions
+        return new Promise((resolve, reject) => {
+            https.get(url, (res) => {
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    try {
+                        resolve(parseCoordinates(JSON.parse(data)));
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            }).on("error", reject);
+        });
+
     } catch (error) {
         console.error("Error fetching coordinates:", error);
+        return { latitude: null, longitude: null };
+    }
+}
+
+// Helper function to parse coordinates from API response
+function parseCoordinates(data) {
+    if (data.results && data.results.length > 0) {
+        return {
+            latitude: data.results[0].geometry.lat,
+            longitude: data.results[0].geometry.lng
+        };
     }
     return { latitude: null, longitude: null };
 }
@@ -67,7 +91,6 @@ app.post("/crimes", async (req, res) => {
             ({ latitude, longitude } = await fetchCoordinates(location));
         }
 
-        // Insert the record without manually managing ID
         const result = await pool.query(
             "INSERT INTO crimes (crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4) RETURNING *",
             [crime_type, location, latitude, longitude]
@@ -109,7 +132,6 @@ app.delete("/crimes/:id", async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Delete the crime record
         const deleteResult = await pool.query("DELETE FROM crimes WHERE id = $1 RETURNING *", [id]);
 
         if (deleteResult.rowCount === 0) {
