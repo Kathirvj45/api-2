@@ -3,12 +3,13 @@ const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
 require("dotenv").config();
+const fetch = require("node-fetch"); // Ensure node-fetch is installed
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: "*" })); // Allow all origins temporarily
 app.use(express.json()); // Allow JSON requests
 
-const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
+const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac"; // Store in .env file
 
 // Serve static files from the current directory
 app.use(express.static(path.join(__dirname)));
@@ -17,17 +18,20 @@ app.use(express.static(path.join(__dirname)));
 app.get("/form", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
-// PostgreSQL connection (update with your Neon.tech credentials)
+
+// PostgreSQL connection (Neon.tech)
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // Store credentials in .env file
+    connectionString: process.env.DATABASE_URL, // Ensure it's set in Render
     ssl: { rejectUnauthorized: false }, // Required for Neon.tech
 });
 
 // 📌 Function to fetch coordinates
 async function fetchCoordinates(location) {
     try {
+        console.log(`Fetching coordinates for: ${location}`);
         const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`);
         const data = await response.json();
+        console.log("Geocode API Response:", data);
 
         if (data.results.length > 0) {
             return {
@@ -44,14 +48,14 @@ async function fetchCoordinates(location) {
 // 📌 GET all crime records
 app.get("/crimes", async (req, res) => {
     try {
+        console.log("Fetching all crimes...");
         const result = await pool.query("SELECT * FROM crimes ORDER BY id DESC");
         res.json(result.rows);
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Server Error");
+        console.error("Error fetching crimes:", error);
+        res.status(500).json({ error: "Server Error" });
     }
 });
-
 
 // 📌 POST a new crime record
 app.post("/crimes", async (req, res) => {
@@ -63,22 +67,19 @@ app.post("/crimes", async (req, res) => {
             ({ latitude, longitude } = await fetchCoordinates(location));
         }
 
-        // Fetch the total count of existing records
-        const countResult = await pool.query("SELECT COUNT(*) FROM crimes");
-        const newId = parseInt(countResult.rows[0].count) + 1; // Get the next ID
-
+        // Insert the record without manually managing ID
         const result = await pool.query(
-            "INSERT INTO crimes (id, crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-            [newId, crime_type, location, latitude, longitude]
+            "INSERT INTO crimes (crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4) RETURNING *",
+            [crime_type, location, latitude, longitude]
         );
 
+        console.log("New crime added:", result.rows[0]);
         res.json(result.rows[0]);
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Error adding crime");
+        console.error("Error adding crime:", error);
+        res.status(500).json({ error: "Error adding crime" });
     }
 });
-
 
 // 📌 PUT (Update) a crime record
 app.put("/crimes/:id", async (req, res) => {
@@ -86,41 +87,40 @@ app.put("/crimes/:id", async (req, res) => {
         const { id } = req.params;
         const { crime_type, location, latitude, longitude } = req.body;
 
-        await pool.query(
-            "UPDATE crimes SET crime_type = $1, location = $2, latitude = $3, longitude = $4 WHERE id = $5",
+        const updateResult = await pool.query(
+            "UPDATE crimes SET crime_type = $1, location = $2, latitude = $3, longitude = $4 WHERE id = $5 RETURNING *",
             [crime_type, location, latitude, longitude, id]
         );
-        res.send("Crime updated successfully");
+
+        if (updateResult.rowCount === 0) {
+            return res.status(404).json({ error: "Crime not found" });
+        }
+
+        console.log("Crime updated:", updateResult.rows[0]);
+        res.json(updateResult.rows[0]);
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Error updating crime");
+        console.error("Error updating crime:", error);
+        res.status(500).json({ error: "Error updating crime" });
     }
 });
 
 // 📌 DELETE a crime record
-// 📌 DELETE a crime record and reorder IDs
 app.delete("/crimes/:id", async (req, res) => {
     try {
         const { id } = req.params;
 
         // Delete the crime record
-        await pool.query("DELETE FROM crimes WHERE id = $1", [id]);
+        const deleteResult = await pool.query("DELETE FROM crimes WHERE id = $1 RETURNING *", [id]);
 
-        // Reorder IDs to maintain sequential numbering
-        await pool.query(`
-            WITH reordered AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS new_id FROM crimes
-            )
-            UPDATE crimes c
-            SET id = r.new_id
-            FROM reordered r
-            WHERE c.id = r.id
-        `);
+        if (deleteResult.rowCount === 0) {
+            return res.status(404).json({ error: "Crime not found" });
+        }
 
-        res.send("Crime deleted and IDs reordered successfully");
+        console.log("Crime deleted:", deleteResult.rows[0]);
+        res.json({ message: "Crime deleted successfully" });
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Error deleting crime");
+        console.error("Error deleting crime:", error);
+        res.status(500).json({ error: "Error deleting crime" });
     }
 });
 
