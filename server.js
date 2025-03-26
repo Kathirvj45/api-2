@@ -2,69 +2,41 @@ const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
 const cors = require("cors");
-const https = require("https"); // Native module for older Node.js versions
 require("dotenv").config();
 
 const app = express();
-app.use(cors({ origin: "*" }));
-app.use(express.json());
+app.use(cors());
+app.use(express.json()); // Allow JSON requests
 
 const GEOCODE_API_KEY = "d6363f444b384201b35bb327964086ac";
 
+// Serve static files from the current directory
 app.use(express.static(path.join(__dirname)));
 
+// Redirect `/form` to `index.html`
 app.get("/form", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
-
-// PostgreSQL connection (Neon.tech)
+// PostgreSQL connection (update with your Neon.tech credentials)
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    connectionString: process.env.DATABASE_URL, // Store credentials in .env file
+    ssl: { rejectUnauthorized: false }, // Required for Neon.tech
 });
 
 // 📌 Function to fetch coordinates
 async function fetchCoordinates(location) {
-    const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`;
-
     try {
-        console.log(`Fetching coordinates for: ${location}`);
+        const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${GEOCODE_API_KEY}`);
+        const data = await response.json();
 
-        // Check if fetch is available (Node.js 18+)
-        if (globalThis.fetch) {
-            const response = await fetch(url);
-            const data = await response.json();
-            return parseCoordinates(data);
+        if (data.results.length > 0) {
+            return {
+                latitude: data.results[0].geometry.lat,
+                longitude: data.results[0].geometry.lng
+            };
         }
-
-        // Fallback for older Node.js versions
-        return new Promise((resolve, reject) => {
-            https.get(url, (res) => {
-                let data = "";
-                res.on("data", (chunk) => (data += chunk));
-                res.on("end", () => {
-                    try {
-                        resolve(parseCoordinates(JSON.parse(data)));
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            }).on("error", reject);
-        });
-
     } catch (error) {
         console.error("Error fetching coordinates:", error);
-        return { latitude: null, longitude: null };
-    }
-}
-
-// Helper function to parse coordinates from API response
-function parseCoordinates(data) {
-    if (data.results && data.results.length > 0) {
-        return {
-            latitude: data.results[0].geometry.lat,
-            longitude: data.results[0].geometry.lng
-        };
     }
     return { latitude: null, longitude: null };
 }
@@ -72,14 +44,14 @@ function parseCoordinates(data) {
 // 📌 GET all crime records
 app.get("/crimes", async (req, res) => {
     try {
-        console.log("Fetching all crimes...");
         const result = await pool.query("SELECT * FROM crimes ORDER BY id DESC");
         res.json(result.rows);
     } catch (error) {
-        console.error("Error fetching crimes:", error);
-        res.status(500).json({ error: "Server Error" });
+        console.error(error);
+        res.status(500).send("Server Error");
     }
 });
+
 
 // 📌 POST a new crime record
 app.post("/crimes", async (req, res) => {
@@ -91,18 +63,22 @@ app.post("/crimes", async (req, res) => {
             ({ latitude, longitude } = await fetchCoordinates(location));
         }
 
+        // Fetch the total count of existing records
+        const countResult = await pool.query("SELECT COUNT(*) FROM crimes");
+        const newId = parseInt(countResult.rows[0].count) + 1; // Get the next ID
+
         const result = await pool.query(
-            "INSERT INTO crimes (crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4) RETURNING *",
-            [crime_type, location, latitude, longitude]
+            "INSERT INTO crimes (id, crime_type, location, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+            [newId, crime_type, location, latitude, longitude]
         );
 
-        console.log("New crime added:", result.rows[0]);
         res.json(result.rows[0]);
     } catch (error) {
-        console.error("Error adding crime:", error);
-        res.status(500).json({ error: "Error adding crime" });
+        console.error(error);
+        res.status(500).send("Error adding crime");
     }
 });
+
 
 // 📌 PUT (Update) a crime record
 app.put("/crimes/:id", async (req, res) => {
@@ -110,20 +86,14 @@ app.put("/crimes/:id", async (req, res) => {
         const { id } = req.params;
         const { crime_type, location, latitude, longitude } = req.body;
 
-        const updateResult = await pool.query(
-            "UPDATE crimes SET crime_type = $1, location = $2, latitude = $3, longitude = $4 WHERE id = $5 RETURNING *",
+        await pool.query(
+            "UPDATE crimes SET crime_type = $1, location = $2, latitude = $3, longitude = $4 WHERE id = $5",
             [crime_type, location, latitude, longitude, id]
         );
-
-        if (updateResult.rowCount === 0) {
-            return res.status(404).json({ error: "Crime not found" });
-        }
-
-        console.log("Crime updated:", updateResult.rows[0]);
-        res.json(updateResult.rows[0]);
+        res.send("Crime updated successfully");
     } catch (error) {
-        console.error("Error updating crime:", error);
-        res.status(500).json({ error: "Error updating crime" });
+        console.error(error);
+        res.status(500).send("Error updating crime");
     }
 });
 
@@ -131,18 +101,11 @@ app.put("/crimes/:id", async (req, res) => {
 app.delete("/crimes/:id", async (req, res) => {
     try {
         const { id } = req.params;
-
-        const deleteResult = await pool.query("DELETE FROM crimes WHERE id = $1 RETURNING *", [id]);
-
-        if (deleteResult.rowCount === 0) {
-            return res.status(404).json({ error: "Crime not found" });
-        }
-
-        console.log("Crime deleted:", deleteResult.rows[0]);
-        res.json({ message: "Crime deleted successfully" });
+        await pool.query("DELETE FROM crimes WHERE id = $1", [id]);
+        res.send("Crime deleted successfully");
     } catch (error) {
-        console.error("Error deleting crime:", error);
-        res.status(500).json({ error: "Error deleting crime" });
+        console.error(error);
+        res.status(500).send("Error deleting crime");
     }
 });
 
